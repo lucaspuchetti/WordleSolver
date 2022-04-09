@@ -1,0 +1,8 @@
+.attach_*
+.bsp/
+.idea/
+data/*
+!data/erase.me
+!src/test/scala/erase.me
+project/
+target/

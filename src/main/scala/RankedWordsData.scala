@@ -1,7 +1,9 @@
 import java.io.{FileInputStream, PrintWriter}
 import java.util.zip.GZIPInputStream
 import scala.util.{Failure, Success, Try, Using}
-import scalaz.Scalaz._
+import scala.collection.immutable.Map
+//import scalaz.Scalaz._
+
 
 /**
  * Recupera la info de las palabras que son posibles de utilizar en Wordle, junto con un coeficiente que representa la
@@ -9,6 +11,11 @@ import scalaz.Scalaz._
  * el comando para recuperar la información es `loadSolverData`
  */
 object RankedWordsData {
+
+    lazy val wordleWords: Map[String, Double] = RankedWordsData.loadSolverData() match {
+        case Failure(e) => throw e
+        case Success(m) => normalizeWordRanking(m)
+    }
 
     def rankingExtractor(s:String): Option[(String,Int)] =
         s.split('\t').toList match {
@@ -31,7 +38,7 @@ object RankedWordsData {
                   .getLines()
                   .flatMap(rankingExtractor)
                   .toMap
-            } reduce( _ |+| _ )
+            } reduce( _ ++ _ )
         }
     }
 
@@ -92,6 +99,23 @@ object RankedWordsData {
                     case Failure(e) => Failure(e)
                 }
         }
+    }
+ // TODO: Estudiar la viabilidad de maximizar la dispersión de las palabras
+    def normalizeWordRanking(wordMap: Map[String,Int]): Map[String, Double] = {
+        // Normalizamos la frecuencia, reducimos la amplitud de las palabras más frecuentes
+        // Al resultado aplicamos la sigmoid de la logística, por lo que ajustamos el resultado para maximizar la amplitud
+        val sig = (x: Double) => 1.0 / (1.0 + math.exp(-x))
+        def normalize(min: Int, max: Int) (x: Int) : Double = {
+            math.pow((x - min).toDouble / (max - min).toDouble , 0.5) - math.pow(3,0.5) * 3
+        }
+        val minRank = wordMap // Dejo esto por si es necesario calcular el máximo.
+          .toSeq
+          .map(x => (x._2, x._2))
+          .reduceLeft((x,y) => (x._1 min y._1, x._2 max y._2))
+          ._1
+        val norm : Int => Double=  normalize(minRank, 1337)
+        wordMap
+          .map { case k -> v => k -> (norm andThen sig) (v) }
     }
 
 }

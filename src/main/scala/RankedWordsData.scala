@@ -1,7 +1,6 @@
 import java.io.{FileInputStream, PrintWriter}
 import java.util.zip.GZIPInputStream
 import scala.util.{Failure, Success, Try, Using}
-import scala.collection.immutable.Map
 //import scalaz.Scalaz._
 
 

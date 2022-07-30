@@ -1,3 +1,4 @@
+import WordleLogic.{getGuess, getAnswer, getWordleMatch}
 
 object WordleSolver extends App {
     // Cargamos los datos:
@@ -11,4 +12,15 @@ object WordleSolver extends App {
         contenido.foreach(line => pw.write(line))
     }
      */
+    val answer = getAnswer
+    var continue = true
+
+    for (_ <- 1 to 5) {
+        if (continue) {
+            val v = getWordleMatch(getGuess, answer)
+            println(v.mkString(" "))
+            continue = !v.forall(_ == ExactMatch)
+        } else print("")
+
+    }
 }

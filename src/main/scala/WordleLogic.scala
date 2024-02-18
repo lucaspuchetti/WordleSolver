@@ -1,24 +1,17 @@
 
-import scala.annotation.tailrec
-
+case class Letter(character: Char, pos: Int)
 abstract class Word {
     def word: String
-    def enumerated: Seq[(Char, Int)] = word.toSeq.zipWithIndex
+    def enumerated: Seq[Letter] = word.toSeq.zipWithIndex.map( (c, p) => Letter(c, p) )
 }
 
 case class Guess(word: String) extends Word
 case class Answer(word: String) extends Word
 
-abstract class MatchLevel
-object NoMatch extends MatchLevel {
-    override def toString: String = "No Match!"
-}
-object PartialMatch extends MatchLevel {
-    override def toString: String = "Partial Match"
-}
-object ExactMatch extends MatchLevel {
-    override def toString: String = "Exact Match!"
-}
+enum MatchLevel:
+  case PartialMatch, NoMatch, ExactMatch
+
+case class Decision(letter: Letter, matchLevel: MatchLevel)
 
 object WordleLogic {
     def getAnswer: Answer = {
@@ -31,56 +24,41 @@ object WordleLogic {
         Guess(io.StdIn.readLine().toLowerCase)
     }
 
-    // Función que devuelve el resultado de la adivinación.
-    @tailrec
-    def resolveMatchedCharacters(resolveType: MatchLevel, resolveGuessedChar: ((Char,Int), Seq[(Char,Int)]) => (Boolean,Int))(a: Seq[(Char, Int)], g: Seq[(Char,Int)])(r: Seq[(Char, Int, MatchLevel)] = Nil): Seq[(Char, Int, MatchLevel)] = {
-        a match {
-            case h +: t =>
-                val (resolvePredicate, resolvedPosition) = resolveGuessedChar(h, g)
-                if (resolvePredicate) {
-                    // Removemos los caracteres adivinados
-                    val currentGuess = g.filter(_ != (h._1, resolvedPosition))
-                    resolveMatchedCharacters(resolveType, resolveGuessedChar)(t, currentGuess)((h._1, resolvedPosition, resolveType) +: r)
-                } else {
-                    resolveMatchedCharacters(resolveType, resolveGuessedChar)(t, g)(r)
-                }
-            case Nil => r
-        }
-    }
+    private def resolveForFullMatch(l: Letter, opts: Seq[Letter]): (Decision, Seq[Letter]) =
+        opts filter (_ == l) match
+            case Nil => (Decision(l, MatchLevel.NoMatch), opts)
+            case x   => (Decision(l, MatchLevel.ExactMatch), opts diff x )
 
-    // Definimos las reglas para encontrar aciertos
-    def findExactMatch(letter: (Char,Int), possibilities: Seq[(Char,Int)]): (Boolean,Int) = {
-        if (possibilities.contains(letter)) (true, letter._2) else (false, -1)
-    }
+    private def resolveForPartialMatch(l: Letter, opts: Seq[Letter]): (Decision, Seq[Letter]) =
+        opts filter (_.character == l.character) match
+            case Nil => (Decision(l, MatchLevel.NoMatch), opts)
+            case pms => (Decision(l, MatchLevel.PartialMatch), opts diff pms.take(1) )
 
-    def findPartialMatch(letter: (Char,Int), possibilities: Seq[(Char,Int)]): (Boolean,Int) = {
-        val partialMatches = possibilities.filter( _._1 == letter._1)
-        if (partialMatches.nonEmpty) (true, partialMatches.head._2) else (false,-1)
-    }
+    private def getDecisionsFromFunction(sourceLetterSeq: Seq[Letter], targetLetterSeq: Seq[Letter], resolveFunc: (Letter, Seq[Letter]) => (Decision, Seq[Letter])): (Seq[Decision], Seq[Letter]) =
+        sourceLetterSeq.foldLeft(Seq[Decision](), targetLetterSeq)(
+            (acc: (Seq[Decision], Seq[Letter]), letter: Letter) =>
+                val (decisions: Seq[Decision], current_options: Seq[Letter]) = acc
+                val (current_decision: Decision, new_options: Seq[Letter]) = resolveFunc(letter, current_options)
+                (decisions :+ current_decision, new_options)
+        )
 
-    // Primero  resolvemos los aciertos, luego los parciales y marcamos el resto como no adivinados.
-    def getWordleMatch(g: Guess, a: Answer) : Seq[MatchLevel] = {
+    def resolveWord(guess: Guess, answer: Answer): Seq[Decision] =
+        val (decisionFromFullMatch, remainingOptions) = getDecisionsFromFunction(
+            guess.enumerated,
+            answer.enumerated,
+            resolveForFullMatch
+        )
+        val lettersForPartialMatch = decisionFromFullMatch
+          .filter( _.matchLevel == MatchLevel.NoMatch )
+          .map( _.letter )
+        val (decisionFromPartialMatch, _) = getDecisionsFromFunction(
+            lettersForPartialMatch,
+            remainingOptions,
+            resolveForPartialMatch
+        )
 
-        val exactMatches = resolveMatchedCharacters(resolveType = ExactMatch, resolveGuessedChar = findExactMatch)(a.enumerated, g.enumerated)()
-        // Removemos las letras adivinadas antes de buscar parciales.
-        val unguessedAndUnanswered: Word => Seq[(Char,Int)] = y => y.enumerated.filterNot {
-            exactMatches.map(x => (x._1, x._2)).contains(_)
-        }
-        val unguessed = unguessedAndUnanswered(g)
-        val unanswered = unguessedAndUnanswered(a)
+        val finalDecisions = decisionFromFullMatch.filter( _.matchLevel == MatchLevel.ExactMatch) ++  decisionFromPartialMatch
 
-        val partialMatches = resolveMatchedCharacters(resolveType = PartialMatch, resolveGuessedChar = findPartialMatch)(unanswered,unguessed)()
+        finalDecisions.sortBy( _.letter.pos )
 
-        // Recuperamos el resto, ordenamos y terminamos
-
-        val notMatched = g.enumerated.filterNot { l =>
-            (exactMatches ++ partialMatches).map(x => (x._1,x._2)).contains(l)
-        } map {
-            l => (l._1,l._2, NoMatch)
-        }
-
-        (exactMatches ++ partialMatches ++ notMatched).sortWith(_._2 < _._2).map(_._3)
-
-    }
-
-    }
+}
